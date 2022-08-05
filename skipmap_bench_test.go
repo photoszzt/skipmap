@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/btree"
+	cmap "github.com/orcaman/concurrent-map/v2"
 	"github.com/zhangyunhao116/fastrand"
 )
 
@@ -57,6 +58,12 @@ func BenchmarkString(b *testing.B) {
 				data: btree.NewG(2, btree.LessFunc[kvStringPair](func(a, b kvStringPair) bool {
 					return strings.Compare(a.key, b.key) < 0
 				})),
+			}
+		}})
+	all = append(all, benchStringTask{
+		name: "concurrent-map", New: func() stringMap {
+			return &stringCMap{
+				data: cmap.New[interface{}](),
 			}
 		}})
 	benchStringStore(b, all)
@@ -452,5 +459,29 @@ func (m *stringBTreeSyncMap) Range(f func(key string, value interface{}) bool) {
 	defer m.mu.Unlock()
 	m.data.Ascend(btree.ItemIteratorG[kvStringPair](func(i kvStringPair) bool {
 		return !f(i.key, i.val)
+	}))
+}
+
+type stringCMap struct {
+	data cmap.ConcurrentMap[interface{}]
+}
+
+func (m *stringCMap) Store(x string, v interface{}) {
+	m.data.Set(x, v)
+}
+
+func (m *stringCMap) Load(x string) (interface{}, bool) {
+	v, ok := m.data.Get(x)
+	return v, ok
+}
+
+func (m *stringCMap) Delete(x string) bool {
+	m.data.Remove(x)
+	return true
+}
+
+func (m *stringCMap) Range(f func(key string, value interface{}) bool) {
+	m.data.IterCb(cmap.IterCb[interface{}](func(key string, value interface{}) {
+		f(key, value)
 	}))
 }
