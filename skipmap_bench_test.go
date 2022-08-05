@@ -3,9 +3,11 @@ package skipmap
 import (
 	"math"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
+	"github.com/google/btree"
 	"github.com/zhangyunhao116/fastrand"
 )
 
@@ -24,9 +26,18 @@ func BenchmarkInt64(b *testing.B) {
 		name: "sync.Map", New: func() int64Map {
 			return new(int64SyncMap)
 		}})
+	all = append(all, benchInt64Task{
+		name: "btree.BTree", New: func() int64Map {
+			return &int64BTreeSyncMap{
+				data: btree.NewG(2, btree.LessFunc[kvInt64Pair](func(a, b kvInt64Pair) bool {
+					return a.key < b.key
+				})),
+			}
+		}})
 	benchStore(b, all)
 	benchLoad50Hits(b, all)
 	bench30Store70Load(b, all)
+	bench50Store50Load(b, all)
 	bench1Delete9Store90Load(b, all)
 	bench1Range9Delete90Store900Load(b, all)
 }
@@ -40,9 +51,18 @@ func BenchmarkString(b *testing.B) {
 		name: "sync.Map", New: func() stringMap {
 			return new(stringSyncMap)
 		}})
+	all = append(all, benchStringTask{
+		name: "btree.BTree", New: func() stringMap {
+			return &stringBTreeSyncMap{
+				data: btree.NewG(2, btree.LessFunc[kvStringPair](func(a, b kvStringPair) bool {
+					return strings.Compare(a.key, b.key) < 0
+				})),
+			}
+		}})
 	benchStringStore(b, all)
 	benchStringLoad50Hits(b, all)
 	benchString30Store70Load(b, all)
+	benchString50Store50Load(b, all)
 	benchString1Delete9Store90Load(b, all)
 	benchString1Range9Delete90Store900Load(b, all)
 }
@@ -90,6 +110,25 @@ func bench30Store70Load(b *testing.B, benchTasks []benchInt64Task) {
 				for pb.Next() {
 					u := fastrand.Uint32n(10)
 					if u < 3 {
+						s.Store(int64(fastrand.Uint32n(randN)), mockvalue)
+					} else {
+						s.Load(int64(fastrand.Uint32n(randN)))
+					}
+				}
+			})
+		})
+	}
+}
+
+func bench50Store50Load(b *testing.B, benchTasks []benchInt64Task) {
+	for _, v := range benchTasks {
+		b.Run("50Store50Load/"+v.name, func(b *testing.B) {
+			s := v.New()
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				for pb.Next() {
+					u := fastrand.Uint32n(10)
+					if u < 5 {
 						s.Store(int64(fastrand.Uint32n(randN)), mockvalue)
 					} else {
 						s.Load(int64(fastrand.Uint32n(randN)))
@@ -199,6 +238,25 @@ func benchString30Store70Load(b *testing.B, benchTasks []benchStringTask) {
 	}
 }
 
+func benchString50Store50Load(b *testing.B, benchTasks []benchStringTask) {
+	for _, v := range benchTasks {
+		b.Run("50Store50Load/"+v.name, func(b *testing.B) {
+			s := v.New()
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				for pb.Next() {
+					u := fastrand.Uint32n(10)
+					if u < 3 {
+						s.Store(strconv.Itoa(int(fastrand.Uint32n(randN))), mockvalue)
+					} else {
+						s.Load(strconv.Itoa(int(fastrand.Uint32n(randN))))
+					}
+				}
+			})
+		})
+	}
+}
+
 func benchString1Delete9Store90Load(b *testing.B, benchTasks []benchStringTask) {
 	for _, v := range benchTasks {
 		b.Run("1Delete9Store90Load/"+v.name, func(b *testing.B) {
@@ -246,8 +304,8 @@ func benchString1Range9Delete90Store900Load(b *testing.B, benchTasks []benchStri
 }
 
 type benchInt64Task struct {
-	name string
 	New  func() int64Map
+	name string
 }
 
 type int64Map interface {
@@ -280,9 +338,50 @@ func (m *int64SyncMap) Range(f func(key int64, value interface{}) bool) {
 	})
 }
 
+type kvInt64Pair struct {
+	val interface{}
+	key int64
+}
+
+type int64BTreeSyncMap struct {
+	mu   sync.RWMutex
+	data *btree.BTreeG[kvInt64Pair]
+}
+
+func (m *int64BTreeSyncMap) Store(x int64, v interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.data.ReplaceOrInsert(kvInt64Pair{val: v, key: x})
+}
+
+func (m *int64BTreeSyncMap) Load(x int64) (interface{}, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	v, ok := m.data.Get(kvInt64Pair{val: nil, key: x})
+	if ok {
+		return v.val, true
+	}
+	return nil, false
+}
+
+func (m *int64BTreeSyncMap) Delete(x int64) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, exists := m.data.Delete(kvInt64Pair{val: nil, key: x})
+	return exists
+}
+
+func (m *int64BTreeSyncMap) Range(f func(key int64, value interface{}) bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.data.Ascend(btree.ItemIteratorG[kvInt64Pair](func(i kvInt64Pair) bool {
+		return !f(i.key, i.val)
+	}))
+}
+
 type benchStringTask struct {
-	name string
 	New  func() stringMap
+	name string
 }
 
 type stringMap interface {
@@ -313,4 +412,45 @@ func (m *stringSyncMap) Range(f func(key string, value interface{}) bool) {
 	m.data.Range(func(key, value interface{}) bool {
 		return !f(key.(string), value)
 	})
+}
+
+type kvStringPair struct {
+	val interface{}
+	key string
+}
+
+type stringBTreeSyncMap struct {
+	mu   sync.RWMutex
+	data *btree.BTreeG[kvStringPair]
+}
+
+func (m *stringBTreeSyncMap) Store(x string, v interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.data.ReplaceOrInsert(kvStringPair{val: v, key: x})
+}
+
+func (m *stringBTreeSyncMap) Load(x string) (interface{}, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	v, ok := m.data.Get(kvStringPair{val: nil, key: x})
+	if ok {
+		return v.val, true
+	}
+	return nil, false
+}
+
+func (m *stringBTreeSyncMap) Delete(x string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, exists := m.data.Delete(kvStringPair{val: nil, key: x})
+	return exists
+}
+
+func (m *stringBTreeSyncMap) Range(f func(key string, value interface{}) bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.data.Ascend(btree.ItemIteratorG[kvStringPair](func(i kvStringPair) bool {
+		return !f(i.key, i.val)
+	}))
 }
