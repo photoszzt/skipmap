@@ -469,9 +469,11 @@ func (s *{{.StructPrefix}}Map{{.StructSuffix}}{{.TypeArgument}}) Range(f func(ke
 	}
 }
 
-// RangeFrom calls f sequentially for each key >= `key` and value present in the skipmap.
+// RangeFrom calls f sequentially for each key >= `key` and value present in the ascending skipmap,
+// and for each key <= `key` and value present in the descending skipmap.
 // If f returns false, range stops the iteration. If `key` is not in the skipmap, the iteration
-// starts from the first key that is greater than `key`.
+// starts from the first key that is greater than `key` for ascending skipmap and smaller than
+// `key` for descending skipmap.
 //
 // RangeFrom does not necessarily correspond to any consistent snapshot of the Map's
 // contents: no key will be visited more than once, but if the value for any key
@@ -481,6 +483,8 @@ func (s *{{.StructPrefix}}Map{{.StructSuffix}}{{.TypeArgument}}) RangeFrom(key {
 	var preds, succs [maxLevel]*{{.StructPrefixLow}}node{{.StructSuffix}}{{.TypeArgument}}
 	_ = s.findNodeDelete(key, &preds, &succs)
 	x := succs[0]
+	// preds[i].key < key <= succs[i].key for ascending skipmap
+	// preds[i].key > key >= succs[i].key for descending skipmap
 	for x != nil {
 		if !x.flags.MGet(fullyLinked|marked, fullyLinked) {
 			x = x.atomicLoadNext(0)
