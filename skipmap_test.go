@@ -342,12 +342,28 @@ func testSkipMapInt(t *testing.T, newset func() anyskipmap[int]) {
 
 func testSkipMapIntDesc(t *testing.T, newset func() anyskipmap[int]) {
 	m := newset()
-	cases := []int{10, 11, 12}
+	cases := []int{10, 11, 12, 14}
 	for _, v := range cases {
 		m.Store(v, nil)
 	}
 	i := len(cases) - 1
 	m.Range(func(key int, _ interface{}) bool {
+		if key != cases[i] {
+			t.Fail()
+		}
+		i--
+		return true
+	})
+	i = 1
+	m.RangeFrom(11, func(key int, _ interface{}) bool {
+		if key != cases[i] {
+			t.Fail()
+		}
+		i--
+		return true
+	})
+	i = 2
+	m.RangeFrom(13, func(key int, _ interface{}) bool {
 		if key != cases[i] {
 			t.Fail()
 		}
