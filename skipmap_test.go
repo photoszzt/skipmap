@@ -1,7 +1,9 @@
 package skipmap
 
 import (
+	"fmt"
 	"math/rand"
+	"os"
 	"reflect"
 	"runtime"
 	"strconv"
@@ -38,6 +40,7 @@ type anyskipmap[T any] interface {
 	LoadOrStore(key T, value any) (any, bool)
 	LoadOrStoreLazy(key T, f func() any) (any, bool)
 	Range(f func(key T, value any) bool)
+	RangeFrom(key T, f func(key T, value any) bool)
 	Len() int
 }
 
@@ -112,6 +115,66 @@ func testSkipMapInt(t *testing.T, newset func() anyskipmap[int]) {
 	if !ok || v != 123 || m.Len() != 1 {
 		t.Fatal("invalid")
 	}
+
+	m.Store(124, 125)
+	m.Store(128, 129)
+	m.Store(129, 130)
+	keys := make([]int, 0, 4)
+	vals := make([]int, 0, 4)
+	expected_keys := []int{123, 124, 128, 129}
+	expected_vals := []int{123, 125, 129, 130}
+	m.Range(func(key int, val interface{}) bool {
+		keys = append(keys, key)
+		vals = append(vals, val.(int))
+		return true
+	})
+	if !reflect.DeepEqual(keys, expected_keys) || !reflect.DeepEqual(vals, expected_vals) {
+		t.Fatal("invalid")
+	}
+
+	keys = make([]int, 0, 4)
+	vals = make([]int, 0, 4)
+	m.RangeFrom(124, func(key int, val interface{}) bool {
+		keys = append(keys, key)
+		vals = append(vals, val.(int))
+		return true
+	})
+	expected_keys = []int{124, 128, 129}
+	expected_vals = []int{125, 129, 130}
+	if !reflect.DeepEqual(keys, expected_keys) || !reflect.DeepEqual(vals, expected_vals) {
+		t.Fatal("invalid")
+	}
+
+	keys = make([]int, 0, 4)
+	vals = make([]int, 0, 4)
+	expected_keys = []int{128, 129}
+	expected_vals = []int{129, 130}
+	m.RangeFrom(125, func(key int, val interface{}) bool {
+		fmt.Fprintf(os.Stderr, "key: %v, val: %v\n", key, val)
+		keys = append(keys, key)
+		vals = append(vals, val.(int))
+		return true
+	})
+	if !reflect.DeepEqual(keys, expected_keys) || !reflect.DeepEqual(vals, expected_vals) {
+		t.Fatal("invalid")
+	}
+
+	keys = make([]int, 0, 4)
+	vals = make([]int, 0, 4)
+	expected_keys = []int{123, 124, 128, 129}
+	expected_vals = []int{123, 125, 129, 130}
+	m.RangeFrom(2, func(key int, val interface{}) bool {
+		fmt.Fprintf(os.Stderr, "key: %v, val: %v\n", key, val)
+		keys = append(keys, key)
+		vals = append(vals, val.(int))
+		return true
+	})
+	if !reflect.DeepEqual(keys, expected_keys) || !reflect.DeepEqual(vals, expected_vals) {
+		t.Fatal("invalid")
+	}
+	m.Delete(124)
+	m.Delete(128)
+	m.Delete(129)
 
 	// Concurrent.
 	var wg sync.WaitGroup
