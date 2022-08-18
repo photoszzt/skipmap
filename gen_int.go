@@ -470,6 +470,30 @@ func (s *IntMap[valueT]) Range(f func(key int, value valueT) bool) {
 	}
 }
 
+// RangeFrom calls f sequentially for each key >= `key` and value present in the skipmap.
+// If f returns false, range stops the iteration. If `key` is not in the skipmap, the iteration
+// starts from the first key that is greater than `key`.
+//
+// RangeFrom does not necessarily correspond to any consistent snapshot of the Map's
+// contents: no key will be visited more than once, but if the value for any key
+// is stored or deleted concurrently, Range may reflect any mapping for that key
+// from any point during the Range call.
+func (s *IntMap[valueT]) RangeFrom(key int, f func(key int, value valueT) bool) {
+	var preds, succs [maxLevel]*intnode[valueT]
+	_ = s.findNodeDelete(key, &preds, &succs)
+	x := succs[0]
+	for x != nil {
+		if !x.flags.MGet(fullyLinked|marked, fullyLinked) {
+			x = x.atomicLoadNext(0)
+			continue
+		}
+		if !f(x.key, x.loadVal()) {
+			break
+		}
+		x = x.atomicLoadNext(0)
+	}
+}
+
 // Len returns the length of this skipmap.
 func (s *IntMap[valueT]) Len() int {
 	return int(atomic.LoadInt64(&s.length))
