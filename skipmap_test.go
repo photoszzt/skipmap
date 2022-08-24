@@ -1,9 +1,7 @@
 package skipmap
 
 import (
-	"fmt"
 	"math/rand"
-	"os"
 	"reflect"
 	"runtime"
 	"strconv"
@@ -13,6 +11,18 @@ import (
 
 	"github.com/zhangyunhao116/fastrand"
 )
+
+func TestRange(t *testing.T) {
+	createIntMap := func() anyskipmap[int] { return NewInt[any]() }
+	testRangeGetAllVals(t, createIntMap)
+	testRangeEmptyMap(t, createIntMap)
+	testRangeFromEmptyMap(t, createIntMap)
+	testRangeFromMiddleStartExists(t, createIntMap)
+	testRangeFromMiddleStartNotExists(t, createIntMap)
+	testRangeFromStartSmallerThanAnyElement(t, createIntMap)
+	testRangeFromStartLargerThanAnyElement(t, createIntMap)
+	testRangeFromWithUpperBound(t, createIntMap)
+}
 
 func TestTyped(t *testing.T) {
 	testSkipMapInt(t, func() anyskipmap[int] { return NewInt[any]() })
@@ -42,6 +52,161 @@ type anyskipmap[T any] interface {
 	Range(f func(key T, value any) bool)
 	RangeFrom(key T, f func(key T, value any) bool)
 	Len() int
+}
+
+func putIntBatch(t *testing.T, m anyskipmap[int]) {
+	m.Store(123, 123)
+	m.Store(124, 125)
+	for i := 128; i < 132; i++ {
+		m.Store(i, i+1)
+	}
+}
+
+func testRangeGetAllVals(t *testing.T, newset func() anyskipmap[int]) {
+	m := newset()
+	putIntBatch(t, m)
+	var keys, vals []int
+	expectedKeys := []int{123, 124, 128, 129, 130, 131}
+	expectedVals := []int{123, 125, 129, 130, 131, 132}
+	m.Range(func(key int, val interface{}) bool {
+		keys = append(keys, key)
+		vals = append(vals, val.(int))
+		return true
+	})
+	if !reflect.DeepEqual(keys, expectedKeys) {
+		t.Fatalf("expected keys %v, got %v, ", expectedKeys, keys)
+	}
+	if !reflect.DeepEqual(vals, expectedVals) {
+		t.Fatalf("expected vals %v, got %v, ", expectedVals, vals)
+	}
+}
+
+func testRangeEmptyMap(t *testing.T, newset func() anyskipmap[int]) {
+	m := newset()
+	var keys, vals []int
+	m.Range(func(key int, val interface{}) bool {
+		keys = append(keys, key)
+		vals = append(vals, val.(int))
+		return true
+	})
+	if len(keys) != 0 {
+		t.Fatalf("expected no keys, got %v, ", keys)
+	}
+	if len(vals) != 0 {
+		t.Fatalf("expected no vals, got %v, ", vals)
+	}
+}
+
+func testRangeFromEmptyMap(t *testing.T, newset func() anyskipmap[int]) {
+	m := newset()
+	var keys, vals []int
+	m.RangeFrom(2, func(key int, val interface{}) bool {
+		keys = append(keys, key)
+		vals = append(vals, val.(int))
+		return true
+	})
+	if len(keys) != 0 {
+		t.Fatalf("expected no keys, got %v, ", keys)
+	}
+	if len(vals) != 0 {
+		t.Fatalf("expected no vals, got %v, ", vals)
+	}
+}
+
+func testRangeFromMiddleStartExists(t *testing.T, newset func() anyskipmap[int]) {
+	m := newset()
+	putIntBatch(t, m)
+	var keys, vals []int
+	m.RangeFrom(124, func(key int, val interface{}) bool {
+		keys = append(keys, key)
+		vals = append(vals, val.(int))
+		return true
+	})
+	expectedKeys := []int{124, 128, 129, 130, 131}
+	expectedVals := []int{125, 129, 130, 131, 132}
+	if !reflect.DeepEqual(keys, expectedKeys) {
+		t.Fatalf("expected keys %v, got %v, ", expectedKeys, keys)
+	}
+	if !reflect.DeepEqual(vals, expectedVals) {
+		t.Fatalf("expected vals %v, got %v, ", expectedVals, vals)
+	}
+}
+
+func testRangeFromMiddleStartNotExists(t *testing.T, newset func() anyskipmap[int]) {
+	m := newset()
+	putIntBatch(t, m)
+	var keys, vals []int
+	expectedKeys := []int{128, 129, 130, 131}
+	expectedVals := []int{129, 130, 131, 132}
+	m.RangeFrom(125, func(key int, val interface{}) bool {
+		keys = append(keys, key)
+		vals = append(vals, val.(int))
+		return true
+	})
+	if !reflect.DeepEqual(keys, expectedKeys) {
+		t.Fatalf("expected keys %v, got %v, ", expectedKeys, keys)
+	}
+	if !reflect.DeepEqual(vals, expectedVals) {
+		t.Fatalf("expected vals %v, got %v, ", expectedVals, vals)
+	}
+}
+
+func testRangeFromStartSmallerThanAnyElement(t *testing.T, newset func() anyskipmap[int]) {
+	m := newset()
+	putIntBatch(t, m)
+	var keys, vals []int
+	expectedKeys := []int{123, 124, 128, 129, 130, 131}
+	expectedVals := []int{123, 125, 129, 130, 131, 132}
+	m.RangeFrom(2, func(key int, val interface{}) bool {
+		keys = append(keys, key)
+		vals = append(vals, val.(int))
+		return true
+	})
+	if !reflect.DeepEqual(keys, expectedKeys) {
+		t.Fatalf("expected keys %v, got %v, ", expectedKeys, keys)
+	}
+	if !reflect.DeepEqual(vals, expectedVals) {
+		t.Fatalf("expected vals %v, got %v, ", expectedVals, vals)
+	}
+}
+
+func testRangeFromStartLargerThanAnyElement(t *testing.T, newset func() anyskipmap[int]) {
+	m := newset()
+	putIntBatch(t, m)
+	var keys, vals []int
+	m.RangeFrom(132, func(key int, val interface{}) bool {
+		keys = append(keys, key)
+		vals = append(vals, val.(int))
+		return true
+	})
+	if len(keys) != 0 {
+		t.Fatalf("expected no keys, got %v, ", keys)
+	}
+	if len(vals) != 0 {
+		t.Fatalf("expected no vals, got %v, ", vals)
+	}
+}
+
+func testRangeFromWithUpperBound(t *testing.T, newset func() anyskipmap[int]) {
+	m := newset()
+	putIntBatch(t, m)
+	var keys, vals []int
+	expectedKeys := []int{124, 128, 129, 130}
+	expectedVals := []int{125, 129, 130, 131}
+	m.RangeFrom(124, func(key int, val interface{}) bool {
+		if key > 130 {
+			return false
+		}
+		keys = append(keys, key)
+		vals = append(vals, val.(int))
+		return true
+	})
+	if !reflect.DeepEqual(keys, expectedKeys) {
+		t.Fatalf("expected keys %v, got %v, ", expectedKeys, keys)
+	}
+	if !reflect.DeepEqual(vals, expectedVals) {
+		t.Fatalf("expected vals %v, got %v, ", expectedVals, vals)
+	}
 }
 
 func testSkipMapInt(t *testing.T, newset func() anyskipmap[int]) {
@@ -115,66 +280,6 @@ func testSkipMapInt(t *testing.T, newset func() anyskipmap[int]) {
 	if !ok || v != 123 || m.Len() != 1 {
 		t.Fatal("invalid")
 	}
-
-	m.Store(124, 125)
-	m.Store(128, 129)
-	m.Store(129, 130)
-	keys := make([]int, 0, 4)
-	vals := make([]int, 0, 4)
-	expected_keys := []int{123, 124, 128, 129}
-	expected_vals := []int{123, 125, 129, 130}
-	m.Range(func(key int, val interface{}) bool {
-		keys = append(keys, key)
-		vals = append(vals, val.(int))
-		return true
-	})
-	if !reflect.DeepEqual(keys, expected_keys) || !reflect.DeepEqual(vals, expected_vals) {
-		t.Fatal("invalid")
-	}
-
-	keys = make([]int, 0, 4)
-	vals = make([]int, 0, 4)
-	m.RangeFrom(124, func(key int, val interface{}) bool {
-		keys = append(keys, key)
-		vals = append(vals, val.(int))
-		return true
-	})
-	expected_keys = []int{124, 128, 129}
-	expected_vals = []int{125, 129, 130}
-	if !reflect.DeepEqual(keys, expected_keys) || !reflect.DeepEqual(vals, expected_vals) {
-		t.Fatal("invalid")
-	}
-
-	keys = make([]int, 0, 4)
-	vals = make([]int, 0, 4)
-	expected_keys = []int{128, 129}
-	expected_vals = []int{129, 130}
-	m.RangeFrom(125, func(key int, val interface{}) bool {
-		fmt.Fprintf(os.Stderr, "key: %v, val: %v\n", key, val)
-		keys = append(keys, key)
-		vals = append(vals, val.(int))
-		return true
-	})
-	if !reflect.DeepEqual(keys, expected_keys) || !reflect.DeepEqual(vals, expected_vals) {
-		t.Fatal("invalid")
-	}
-
-	keys = make([]int, 0, 4)
-	vals = make([]int, 0, 4)
-	expected_keys = []int{123, 124, 128, 129}
-	expected_vals = []int{123, 125, 129, 130}
-	m.RangeFrom(2, func(key int, val interface{}) bool {
-		fmt.Fprintf(os.Stderr, "key: %v, val: %v\n", key, val)
-		keys = append(keys, key)
-		vals = append(vals, val.(int))
-		return true
-	})
-	if !reflect.DeepEqual(keys, expected_keys) || !reflect.DeepEqual(vals, expected_vals) {
-		t.Fatal("invalid")
-	}
-	m.Delete(124)
-	m.Delete(128)
-	m.Delete(129)
 
 	// Concurrent.
 	var wg sync.WaitGroup
