@@ -1,4 +1,4 @@
-package skipmap
+package benchmark
 
 import (
 	"math"
@@ -7,9 +7,11 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/cornelk/hashmap"
 	"github.com/google/btree"
 	cmap "github.com/orcaman/concurrent-map/v2"
 	"github.com/zhangyunhao116/fastrand"
+	"github.com/zhangyunhao116/skipmap"
 )
 
 const (
@@ -21,7 +23,7 @@ const (
 func BenchmarkInt64(b *testing.B) {
 	all := []benchInt64Task{{
 		name: "skipmap", New: func() int64Map {
-			return NewInt64[any]()
+			return skipmap.NewInt64[any]()
 		}}}
 	all = append(all, benchInt64Task{
 		name: "sync.Map", New: func() int64Map {
@@ -35,6 +37,12 @@ func BenchmarkInt64(b *testing.B) {
 				})),
 			}
 		}})
+	all = append(all, benchInt64Task{
+		name: "cornelk/hashmap", New: func() int64Map {
+			return &int64CornelkHashmap{
+				data: hashmap.New[int64, interface{}](),
+			}
+		}})
 	benchStore(b, all)
 	benchLoad50Hits(b, all)
 	bench30Store70Load(b, all)
@@ -46,7 +54,7 @@ func BenchmarkInt64(b *testing.B) {
 func BenchmarkString(b *testing.B) {
 	all := []benchStringTask{{
 		name: "skipmap", New: func() stringMap {
-			return NewString[any]()
+			return skipmap.NewString[any]()
 		}}}
 	all = append(all, benchStringTask{
 		name: "sync.Map", New: func() stringMap {
@@ -384,6 +392,26 @@ func (m *int64BTreeSyncMap) Range(f func(key int64, value interface{}) bool) {
 	m.data.Ascend(btree.ItemIteratorG[kvInt64Pair](func(i kvInt64Pair) bool {
 		return !f(i.key, i.val)
 	}))
+}
+
+type int64CornelkHashmap struct {
+	data *hashmap.HashMap[int64, interface{}]
+	name string
+}
+
+func (m *int64CornelkHashmap) Store(x int64, v interface{}) {
+	m.data.Set(x, v)
+}
+func (m *int64CornelkHashmap) Load(x int64) (interface{}, bool) {
+	return m.data.Get(x)
+}
+func (m *int64CornelkHashmap) Delete(x int64) bool {
+	return m.data.Del(x)
+}
+func (m *int64CornelkHashmap) Range(f func(key int64, value interface{}) bool) {
+	m.data.Range(func(key int64, value interface{}) bool {
+		return !f(key, value)
+	})
 }
 
 type benchStringTask struct {
