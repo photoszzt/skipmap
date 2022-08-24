@@ -482,10 +482,14 @@ func (s *IntMapDesc[valueT]) Range(f func(key int, value valueT) bool) {
 // from any point during the Range call.
 func (s *IntMapDesc[valueT]) RangeFrom(start int, f func(key int, value valueT) bool) {
 	var preds, succs [maxLevel]*intnodeDesc[valueT]
-	_ = s.findNode(start, &preds, &succs)
-	x := succs[0]
+	x := s.findNode(start, &preds, &succs)
 	// preds[i].key < key <= succs[i].key for ascending skipmap
 	// preds[i].key > key >= succs[i].key for descending skipmap
+
+	// x doesn't exists in the map; use the cloest node
+	if x == nil {
+		x = succs[0]
+	}
 	for x != nil {
 		if !x.flags.MGet(fullyLinked|marked, fullyLinked) {
 			x = x.atomicLoadNext(0)

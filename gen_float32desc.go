@@ -482,10 +482,14 @@ func (s *Float32MapDesc[valueT]) Range(f func(key float32, value valueT) bool) {
 // from any point during the Range call.
 func (s *Float32MapDesc[valueT]) RangeFrom(start float32, f func(key float32, value valueT) bool) {
 	var preds, succs [maxLevel]*float32nodeDesc[valueT]
-	_ = s.findNode(start, &preds, &succs)
-	x := succs[0]
+	x := s.findNode(start, &preds, &succs)
 	// preds[i].key < key <= succs[i].key for ascending skipmap
 	// preds[i].key > key >= succs[i].key for descending skipmap
+
+	// x doesn't exists in the map; use the cloest node
+	if x == nil {
+		x = succs[0]
+	}
 	for x != nil {
 		if !x.flags.MGet(fullyLinked|marked, fullyLinked) {
 			x = x.atomicLoadNext(0)

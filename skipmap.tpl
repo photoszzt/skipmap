@@ -481,10 +481,14 @@ func (s *{{.StructPrefix}}Map{{.StructSuffix}}{{.TypeArgument}}) Range(f func(ke
 // from any point during the Range call.
 func (s *{{.StructPrefix}}Map{{.StructSuffix}}{{.TypeArgument}}) RangeFrom(start {{.KeyType}}, f func(key {{.KeyType}}, value {{.ValueType}}) bool) {
 	var preds, succs [maxLevel]*{{.StructPrefixLow}}node{{.StructSuffix}}{{.TypeArgument}}
-	_ = s.findNode(start, &preds, &succs)
-	x := succs[0]
+	x := s.findNode(start, &preds, &succs)
 	// preds[i].key < key <= succs[i].key for ascending skipmap
 	// preds[i].key > key >= succs[i].key for descending skipmap
+
+	// x doesn't exists in the map; use the cloest node
+	if x == nil {
+		x = succs[0]
+	}
 	for x != nil {
 		if !x.flags.MGet(fullyLinked|marked, fullyLinked) {
 			x = x.atomicLoadNext(0)

@@ -482,10 +482,14 @@ func (s *StringMapDesc[valueT]) Range(f func(key string, value valueT) bool) {
 // from any point during the Range call.
 func (s *StringMapDesc[valueT]) RangeFrom(start string, f func(key string, value valueT) bool) {
 	var preds, succs [maxLevel]*stringnodeDesc[valueT]
-	_ = s.findNode(start, &preds, &succs)
-	x := succs[0]
+	x := s.findNode(start, &preds, &succs)
 	// preds[i].key < key <= succs[i].key for ascending skipmap
 	// preds[i].key > key >= succs[i].key for descending skipmap
+
+	// x doesn't exists in the map; use the cloest node
+	if x == nil {
+		x = succs[0]
+	}
 	for x != nil {
 		if !x.flags.MGet(fullyLinked|marked, fullyLinked) {
 			x = x.atomicLoadNext(0)
