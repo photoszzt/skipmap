@@ -470,19 +470,19 @@ func (s *Float64Map[valueT]) Range(f func(key float64, value valueT) bool) {
 	}
 }
 
-// RangeFrom calls f sequentially for each key >= `key` and value present in the ascending skipmap,
-// and for each key <= `key` and value present in the descending skipmap.
-// If f returns false, range stops the iteration. If `key` is not in the skipmap, the iteration
-// starts from the first key that is greater than `key` for ascending skipmap and smaller than
-// `key` for descending skipmap.
+// RangeFrom calls f sequentially for each key >= `start` and value present in the ascending skipmap,
+// and for each key <= `start` and value present in the descending skipmap.
+// If f returns false, range stops the iteration. If `start` is not in the skipmap, the iteration
+// starts from the first key that is greater than `start` for ascending skipmap and smaller than
+// `start` for descending skipmap.
 //
 // RangeFrom does not necessarily correspond to any consistent snapshot of the Map's
 // contents: no key will be visited more than once, but if the value for any key
 // is stored or deleted concurrently, Range may reflect any mapping for that key
 // from any point during the Range call.
-func (s *Float64Map[valueT]) RangeFrom(key float64, f func(key float64, value valueT) bool) {
+func (s *Float64Map[valueT]) RangeFrom(start float64, f func(key float64, value valueT) bool) {
 	var preds, succs [maxLevel]*float64node[valueT]
-	_ = s.findNodeDelete(key, &preds, &succs)
+	_ = s.findNode(start, &preds, &succs)
 	x := succs[0]
 	// preds[i].key < key <= succs[i].key for ascending skipmap
 	// preds[i].key > key >= succs[i].key for descending skipmap
