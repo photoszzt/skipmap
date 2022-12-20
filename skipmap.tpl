@@ -11,7 +11,7 @@ type {{.StructPrefix}}Map{{.StructSuffix}}{{.TypeParam}} struct {
 	length       int64
 	highestLevel uint64 // highest level for now
 	header       *{{.StructPrefixLow}}node{{.StructSuffix}}{{.TypeArgument}}
-    {{.ExtraFileds}}
+	{{.ExtraFileds}}
 }
 
 type {{.StructPrefixLow}}node{{.StructSuffix}}{{.TypeParam}} struct {
@@ -164,9 +164,11 @@ func (s *{{.StructPrefix}}Map{{.StructSuffix}}{{.TypeArgument}}) Store(key {{.Ke
 		nn.flags.SetTrue(fullyLinked)
 		unlock{{.Name}}(preds, highestLocked)
 		atomic.AddInt64(&s.length, 1)
+		return
 	}
 }
 
+// randomlevel returns a random level and update the highest level if needed.
 func (s *{{.StructPrefix}}Map{{.StructSuffix}}{{.TypeArgument}}) randomlevel() int {
 	// Generate random level.
 	level := randomLevel()
@@ -276,8 +278,11 @@ func (s *{{.StructPrefix}}Map{{.StructSuffix}}{{.TypeArgument}}) LoadAndDelete(k
 // The loaded result is true if the value was loaded, false if stored.
 // (Modified from Store)
 func (s *{{.StructPrefix}}Map{{.StructSuffix}}{{.TypeArgument}}) LoadOrStore(key {{.KeyType}}, value {{.ValueType}}) (actual {{.ValueType}}, loaded bool) {
-	level := s.randomlevel()
-	var preds, succs [maxLevel]*{{.StructPrefixLow}}node{{.StructSuffix}}{{.TypeArgument}}
+	var (
+		level        int
+		preds, succs [maxLevel]*{{.StructPrefixLow}}node{{.StructSuffix}}{{.TypeArgument}}
+		hl           = int(atomic.LoadUint64(&s.highestLevel))
+	)
 	for {
 		nodeFound := s.findNode(key, &preds, &succs)
 		if nodeFound != nil { // indicating the key is already in the skip-list
@@ -297,6 +302,16 @@ func (s *{{.StructPrefix}}Map{{.StructSuffix}}{{.TypeArgument}}) LoadOrStore(key
 			valid                = true
 			pred, succ, prevPred *{{.StructPrefixLow}}node{{.StructSuffix}}{{.TypeArgument}}
 		)
+		if level == 0 {
+			level = s.randomlevel()
+			if level > hl {
+				// If the highest level is updated, usually means that many goroutines
+				// are inserting items. Hopefully we can find a better path in next loop.
+				// TODO(zyh): consider filling the preds if s.header[level].next == nil,
+				// but this strategy's performance is almost the same as the existing method.
+				continue
+			}
+		}
 		for layer := 0; valid && layer < level; layer++ {
 			pred = preds[layer]   // target node's previous node
 			succ = succs[layer]   // target node's next node
@@ -333,8 +348,11 @@ func (s *{{.StructPrefix}}Map{{.StructSuffix}}{{.TypeArgument}}) LoadOrStore(key
 // The loaded result is true if the value was loaded, false if stored.
 // (Modified from LoadOrStore)
 func (s *{{.StructPrefix}}Map{{.StructSuffix}}{{.TypeArgument}}) LoadOrStoreLazy(key {{.KeyType}}, f func() {{.ValueType}}) (actual {{.ValueType}}, loaded bool) {
-	level := s.randomlevel()
-	var preds, succs [maxLevel]*{{.StructPrefixLow}}node{{.StructSuffix}}{{.TypeArgument}}
+	var (
+		level        int
+		preds, succs [maxLevel]*{{.StructPrefixLow}}node{{.StructSuffix}}{{.TypeArgument}}
+		hl           = int(atomic.LoadUint64(&s.highestLevel))
+	)
 	for {
 		nodeFound := s.findNode(key, &preds, &succs)
 		if nodeFound != nil { // indicating the key is already in the skip-list
@@ -354,6 +372,16 @@ func (s *{{.StructPrefix}}Map{{.StructSuffix}}{{.TypeArgument}}) LoadOrStoreLazy
 			valid                = true
 			pred, succ, prevPred *{{.StructPrefixLow}}node{{.StructSuffix}}{{.TypeArgument}}
 		)
+		if level == 0 {
+			level = s.randomlevel()
+			if level > hl {
+				// If the highest level is updated, usually means that many goroutines
+				// are inserting items. Hopefully we can find a better path in next loop.
+				// TODO(zyh): consider filling the preds if s.header[level].next == nil,
+				// but this strategy's performance is almost the same as the existing method.
+				continue
+			}
+		}
 		for layer := 0; valid && layer < level; layer++ {
 			pred = preds[layer]   // target node's previous node
 			succ = succs[layer]   // target node's next node
